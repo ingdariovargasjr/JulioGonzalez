@@ -220,6 +220,12 @@
                     android:layout_height="0dp"
                     android:layout_weight="2.5">
 
+                <ImageView
+                        android:id="@+id/imageView2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        tools:srcCompat="@tools:sample/avatars" />
             </LinearLayout>
                 
 

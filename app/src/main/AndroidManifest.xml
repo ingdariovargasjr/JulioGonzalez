@@ -42,9 +42,13 @@
             </intent-filter>
         </activity>
 
+        <meta-data
+                android:name="pspdfkit_license_key"
+                android:value="iey3B0GIgV4HwOT_ySBzSerzPkqsieahoaHzNpXWNzbY9o9nDAL3CBa8gjMfd3XmgjBRYdhopHf2Pv3a8P9bEpKSfGExJBh2iUxnzht1gmNyBHYnir8hy1YAIxKhDcqTtHDL5qX8X-1zTCNWlKuWJRbgY0EtSPYHqzfnXb5vGeTZL_jOii_smGnHy9a3LiB49ffEkPrds1bsotpMFla7OnhpqO2kw74VdNznc9tp1d_alJ1AbTuuKX-1OpACJC9oEo5togKOlZnlV2mt_x93IYdD3_j1vJf8vqsE8vWdDQHdA-Ao-9keDNU6H9fC2U8JdM9vaLwFGcUWzae6irhmSl5G3PwVIWzK1wa-KM_TM59AIKI5HAk2Sn2VE9ugtzg7rNG6qeGozP-D6B69sfQUIrQ-G7xY3Cf_NIoEQzCyKvPnj4mgiL8Gg89gRHqgD_VYf_CSTXl4KTjhzhNmnigdBw==" />
+
         <provider
                 android:name="androidx.core.content.FileProvider"
-                android:authorities="com.example.android.fileprovider"
+                android:authorities="${applicationId}.provider"
                 android:exported="false"
                 android:grantUriPermissions="true">
             <meta-data

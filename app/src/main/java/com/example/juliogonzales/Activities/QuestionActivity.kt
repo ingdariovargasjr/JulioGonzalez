@@ -113,7 +113,7 @@ class QuestionActivity : AppCompatActivity() {
             progressDialog.show()
 
 
-            val imageRef = storageReference!!.child("images/$reportId/$QuestionNumber/"+UUID.randomUUID().toString())
+            val imageRef = storageReference!!.child("images/$reportId/$QuestionNumber/"+UUID.randomUUID().toString() + ".jpeg")
             imageRef.putFile(imageRui!!)
                 .addOnSuccessListener {
                     btnUpload.visibility = View.GONE

@@ -1,34 +1,34 @@
 package com.example.juliogonzales.Activities
 
+import android.R.attr.bitmap
 import android.app.ProgressDialog
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.ConnectivityManager
 import android.net.Uri
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Environment
-import android.os.Handler
 import android.provider.MediaStore
-import android.text.Html
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.andrognito.flashbar.Flashbar
-import com.bumptech.glide.Glide
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
+import androidx.core.net.toFile
 import com.example.juliogonzales.Models.ReportModel
 import com.example.juliogonzales.R
 import com.example.juliogonzales.Utils.DrawingView
 import com.google.firebase.database.*
+import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageReference
+import com.google.firebase.storage.ktx.storage
+import com.pspdfkit.configuration.activity.PdfActivityConfiguration
+import com.pspdfkit.document.PdfDocumentLoader
+import com.pspdfkit.document.html.HtmlToPdfConverter
+import com.pspdfkit.ui.PdfActivity
 import kotlinx.android.synthetic.main.activity_images_report.*
 import kotlinx.android.synthetic.main.activity_question.*
 import kotlinx.android.synthetic.main.activity_send_report.*
@@ -36,6 +36,8 @@ import kotlinx.android.synthetic.main.activity_sign.*
 import java.io.File
 import java.io.FileOutputStream
 import java.util.*
+import kotlin.collections.HashMap
+
 
 class SignActivity : AppCompatActivity() {
 
@@ -46,6 +48,7 @@ class SignActivity : AppCompatActivity() {
     internal var storageReference: StorageReference?= null
     private lateinit var Question1Reference: DatabaseReference
     private val images: MutableList<String> = ArrayList()
+    private lateinit var hashMap: HashMap<String, Uri>
 
 
 
@@ -59,17 +62,18 @@ class SignActivity : AppCompatActivity() {
     var sealNumber: String = ""
     var personAfixed: String = ""
     var personVerified: String = ""
+    var imagesURL: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_sign)
 
+        hashMap = HashMap()
         val drawingView = findViewById<DrawingView>(R.id.drawingView)
         val btn_ready = findViewById<LinearLayout>(R.id.btn_listo)
         val btn_trash = findViewById<ImageView>(R.id.btn_trash)
 
         getImages()
-        imageUri
 
         // Get the id of the Report
         val bundle = intent.extras
@@ -81,7 +85,7 @@ class SignActivity : AppCompatActivity() {
         personAfixed = bundle.get("personAfixed") as String
         personVerified = bundle.get("personVer") as String
 
-        Log.d("DEBUGIDSIGN",reportId)
+        Log.d("DEBUGIDSIGN", reportId)
 
         storage = FirebaseStorage.getInstance()
         storageReference = storage!!.reference
@@ -155,12 +159,14 @@ class SignActivity : AppCompatActivity() {
             progressDialog.setTitle("Uploading...")
             progressDialog.show()
 
-            val imageRef = storageReference!!.child("images/$reportId/Signature/"+UUID.randomUUID().toString())
+            val imageRef = storageReference!!.child(
+                "images/$reportId/Signature/" + UUID.randomUUID().toString() + ".jpeg"
+            )
             imageRef.putFile(sharePath!!)
                 .addOnSuccessListener {
                     progressDialog.dismiss()
                     sendEmail()
-                    Toast.makeText(this,"Sign Uploaded",Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Sign Uploaded", Toast.LENGTH_SHORT).show()
 //                    val intent = Intent(this@SignActivity, WelcomeActivity::class.java)
 //                    startActivity(intent)
 //                    finish()
@@ -168,11 +174,11 @@ class SignActivity : AppCompatActivity() {
                 .addOnFailureListener{
                     progressDialog.dismiss()
 
-                    Toast.makeText(this,"Failed",Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Failed", Toast.LENGTH_SHORT).show()
                 }
                 .addOnProgressListener { taskSnapshot ->
                     val progress = 100.0 * taskSnapshot.bytesTransferred/taskSnapshot.totalByteCount
-                    progressDialog.setMessage("Uploaded "+progress.toInt() + "%...")
+                    progressDialog.setMessage("Uploaded " + progress.toInt() + "%...")
                 }
         }
     }
@@ -184,38 +190,59 @@ class SignActivity : AppCompatActivity() {
         val bundle = intent.extras
         val id = bundle?.get("reportID") as String
 
-        val storage = FirebaseStorage.getInstance()
-        val listRef = storage.reference.child("images/$id/extras")
+        val storage = FirebaseStorage.getInstance().reference.child("images/$id/")
+
+
         // WORKING CODE!
         // Create a reference to a file from a Google Cloud Storage URI
 
         val storageReference = FirebaseStorage.getInstance().reference
+        //Log.d("SignActivity", "Buscando Imagenes $id, ${listRef == null} - ${listRef.toString()}")
 
-        listRef.listAll()
-            .addOnSuccessListener { listResult ->
-                listResult.prefixes.forEach { prefix ->
-                    Log.d("Buenoprefix", prefix.toString())
-                }
 
-                listResult.items.forEach { item ->
 
-                    images.add(item.toString())
-                    val gsReference = storage.getReferenceFromUrl(item.toString())
-                    gsReference.downloadUrl.addOnSuccessListener {
-                        if(it != null){
-                            imageUrl = it.toString()
+        storage.listAll().addOnSuccessListener { listResult ->
+            println("listresult: ${listResult.prefixes}")
+            listResult.prefixes.forEach { folder ->
+                println("Folder: ${folder.name}")
+                folder.listAll().addOnSuccessListener { result ->
+
+
+                    result.items.forEach { image ->
+                        val pathTemp = image.path.split("/")
+                        image.downloadUrl.addOnSuccessListener {
+                            if(it != null){
+                                print("Image Properties: ${image.name} ${image.path} -- ${pathTemp[3]}")
+                                println("\t / ${it.toString()} - ${it.path}")
+
+                                hashMap.put(pathTemp[3],it)
+                                println("Asi queda el hashmap: ${hashMap.keys.size} - ${hashMap}")
+                            }
                         }
+
                     }
-                    Log.d("Bueno1", images.toString())
-                    Log.d("Bueno2", item.toString())
-                    Log.d("Bueno3", imageUrl)
                 }
-
-            }
-            .addOnFailureListener {
-                Log.d("Bueno", "Error")
             }
 
+        }.addOnFailureListener {
+            Log.d("Bueno", "Error")
+        }
+
+    }
+
+    fun writeBytesAsJPEG(name: String,bytes : ByteArray) {
+        val path = applicationContext.getExternalFilesDir(Environment.getExternalStorageState() + "/JulioGonzales")
+        var success = true
+        if(!path!!.exists()){
+            success = path.mkdir()
+        }
+        if(success){
+            var file = File.createTempFile(name,".jpeg", path)
+            var os = FileOutputStream(file);
+            os.write(bytes);
+            os.close();
+
+        }
     }
 
     fun sendEmail(){
@@ -245,6 +272,143 @@ class SignActivity : AppCompatActivity() {
                     val personSecurity = it.securityPerson
                     val email = it.email
                     val uri = Uri.parse(sharePath.toString())
+
+                    var imagesAndURL = ""
+
+                    hashMap.forEach { t, u ->
+                        imagesAndURL += "<img src=\"${u}\" />\n"
+                    }
+
+                    var html = """
+                        <!DOCTYPE html>
+                        <html lang="en">
+                        
+                        <head>
+                            <meta charset="UTF-8">
+                            <meta http-equiv="X-UA-Compatible" content="IE=edge">
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                            <link rel="preconnect" href="https://fonts.gstatic.com">
+                            <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+                            <title>Reporte</title>
+                        </head>
+                        
+                        <body>
+                            <h1>Report No. $reportId</h1>
+                        
+                            <ul>
+                                <li>
+                                    <h2>Load Property of: $propertyOf</h2>
+                                    <h2>Vehicle's Economic Number: $vehicleNumber</h2>
+                                    <h2>Licence Plate: $licence</h2>
+                                    <h2>Printed name of person who conducted security inspection upon arrival: $personSecurity</h2>
+                                    <h2>Email where the report will send $email</h2>
+                                    <h2>Date: $date</h2>
+                                    <h2>Printed name of person who conducted follow up security inspection: $personArrival</h2>
+                                    <h2>Seal number(s) that was on container when it arrived at this facility: $sealNumber</h2>
+                                    <h2>Printed name of person who affixed seal(s): $personAfixed</h2>
+                                    <h2>Printed name of person who verified physical integrity of seal(s): $personVerified</h2>
+                                    $imagesAndURL
+                                </li>
+                            </ul>
+                        </body>
+                        
+                        </html>
+                    """
+
+                    println("#### Images and Url ###\n${imagesAndURL}")
+
+                    val folder = Environment.getExternalStorageDirectory()
+                    val f = File(folder, "JulioGonzales")
+                    if(!f.exists()){ //Does not exists the folder
+                        val m = f.mkdir()
+                    }
+
+                    //File
+                    val file = File(Environment.getExternalStorageDirectory().toString() + "/JulioGonzales", "$reportId.pdf")
+                    if(!file.exists()){
+                        val create = file.createNewFile()
+
+                        println("--------- se crea nuevo archivo ---------> $create")
+                    }
+
+                    HtmlToPdfConverter.fromHTMLString(this@SignActivity, html!!)
+                        // Configure title for the created document.
+                        .title("Converted document")
+                        // Perform the conversion.
+                        .convertToPdfAsync(file)
+                        // Subscribe to the conversion result.
+                        .subscribe({
+                            // Open and process the converted document.
+                            val document = PdfDocumentLoader.openDocument(this@SignActivity, Uri.fromFile(file))
+                        }, {
+                            println("...............................")
+                            print(it.stackTrace)
+                        })
+
+                    val pdf = File(Environment.getExternalStorageDirectory().toString() + "/JulioGonzales/", "$reportId.pdf")
+                    val pdfUri: Uri = FileProvider.getUriForFile(applicationContext, applicationContext.packageName + ".provider",file)
+
+                    if(pdf.exists()){
+                        println("------------------------ Existe -------------------------")
+                        val shareIntent = Intent()
+                        shareIntent.action = Intent.ACTION_SEND
+                        shareIntent.type = "application/pdf"
+
+                        shareIntent.putExtra(Intent.EXTRA_STREAM, pdfUri)
+                        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        shareIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        startActivity(Intent.createChooser(shareIntent, "Share via"))
+                    } else {
+                        println("------------------------ !Existe -------------------------")
+                    }
+
+
+                    /*val intent = Intent(Intent.ACTION_SEND)
+                    intent.setType("application/image")
+                    intent.putExtra(Intent.EXTRA_EMAIL, arrayOf(mail))
+                    intent.putExtra(Intent.EXTRA_SUBJECT, "Reporte No. $reportId")
+                    intent.putExtra(Intent.EXTRA_STREAM, hashMap.get("Signature"))
+                    intent.putExtra(
+                        Intent.EXTRA_TEXT,
+                        "Load Property of: \n" +
+                                " $propertyOf\n" +
+                                "\n" +
+                                "Vehicle's Economic Number\n" +
+                                " $vehicleNumber\n" +
+                                "\n" +
+                                "Licence plate\n" +
+                                " $licence\n" +
+                                "\n" +
+                                "Printed name of person who conducted security inspection upon arrival:\n" +
+                                " $personSecurity\n" +
+                                "\n" +
+                                "Email where the report will send\n" +
+                                " $email\n" +
+                                "\n" +
+                                "Date\n" +
+                                " $date\n" +
+                                "\n" +
+                                "Printed name of person who conducted follow up security inspection:\n" +
+                                " $personArrival\n" +
+                                "\n" +
+                                "Seal number(s) that was on container when it arrived at this facility:\n" +
+                                " $sealNumber\n" +
+                                "\n" +
+                                "Printed name of person who affixed seal(s):\n" +
+                                " $personAfixed\n" +
+                                "\n" +
+                                "Printed name of person who verified physical integrity of seal(s):\n" +
+                                " $personVerified\n" +
+                                "\n" +
+                                "Evidence URLs:\n"+
+                                " $imagesAndURL\n"
+                        /* +
+                                "Images URL: \n" +
+                                " ${listImages.toString()}\n" +
+                                "\n"*/
+                    )
+                    startActivity(Intent.createChooser(intent, "Send mail..."));
+
 
                     //Intent to send the email with the information
                     val emailintent = Intent(Intent.ACTION_SEND)
@@ -283,18 +447,18 @@ class SignActivity : AppCompatActivity() {
                                     "\n"+
                                     "Printed name of person who verified physical integrity of seal(s):\n" +
                                     " $personVerified\n" +
-                                    "\n"
-//                                    "Images: \n" +
-//                                    " $imageUrl\n" +
-//                                    "\n"
+                                    "\n" +
+                                    "Evidence URLs:\n"+
+                                    "$imagesAndURL\n"
                         )
 //                    emailintent.putExtra(Intent.EXTRA_STREAM,sharePath)
-                    intent.putExtra(Intent.EXTRA_STREAM, sharePath)
+                    emailintent.putExtra(Intent.EXTRA_STREAM, sharePath)
                     Log.d("BuenoImageUrl", imageUrl)
-
+                    println("----------------- Sign Report Activity ------------------------")
+                    println("ImageURL: $listImages")
                     if (emailintent.resolveActivity(this@SignActivity.packageManager) != null) {
                             startActivity(Intent.createChooser(emailintent,""))
-                        }
+                        }*/
 
                 }
 
@@ -309,3 +473,7 @@ class SignActivity : AppCompatActivity() {
 
 
 }
+
+
+
+
