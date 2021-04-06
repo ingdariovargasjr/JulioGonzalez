@@ -19,7 +19,7 @@ import java.io.*
 import java.text.SimpleDateFormat
 import java.util.*
 
-class Utils (internal var context: Context, internal var activity: Activity) : AppCompatActivity() {
+class Utils(internal var context: Context, internal var activity: Activity) : AppCompatActivity() {
 
     private val SELECT_PICTURE = 2
     private val TAKE_PICTURE = 0
@@ -28,11 +28,26 @@ class Utils (internal var context: Context, internal var activity: Activity) : A
 
 
     fun checkAndRequestPermissions(): Boolean {
-        val permissionRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE)
-        val permissionWrite = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        val permissionLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
-        val permissionLatitud = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-        val permissionCamara = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+        val permissionRead = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        )
+        val permissionWrite = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        )
+        val permissionLocation = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        val permissionLatitud = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        )
+        val permissionCamara = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        )
         val listPermissionsNeeded : ArrayList<String> = ArrayList()
 
         if(permissionLocation!= PackageManager.PERMISSION_GRANTED){
@@ -51,11 +66,41 @@ class Utils (internal var context: Context, internal var activity: Activity) : A
             listPermissionsNeeded.add(Manifest.permission.CAMERA)
         }
         if (!listPermissionsNeeded.isEmpty()) {
-            ActivityCompat.requestPermissions(this.activity, listPermissionsNeeded.toTypedArray(), 1)
+            ActivityCompat.requestPermissions(
+                this.activity,
+                listPermissionsNeeded.toTypedArray(),
+                1
+            )
+
             return false
         }
         return true
     }
+
+    fun checkNeedPermissions() {
+        //Above 6.0 needs to apply for permission dynamically
+        if ((ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    != PackageManager.PERMISSION_GRANTED) || (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            )
+                    != PackageManager.PERMISSION_GRANTED) || (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            )
+                    != PackageManager.PERMISSION_GRANTED)
+        ) {
+            //Apply for multiple permissions together
+            ActivityCompat.requestPermissions(
+                activity, arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ), 1
+            )
+        }
+    }
+
 
     fun validateEmail(email: String): Boolean {
         var valid = false
@@ -71,7 +116,10 @@ class Utils (internal var context: Context, internal var activity: Activity) : A
 
         var photo: Uri? = null
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        val file = File(Environment.getExternalStorageDirectory(), "" + System.currentTimeMillis().toString() + ".jpg")
+        val file = File(
+            Environment.getExternalStorageDirectory(),
+            "" + System.currentTimeMillis().toString() + ".jpg"
+        )
         val outputFileUri = Uri.fromFile(file)
         photo = outputFileUri
         intent.putExtra(MediaStore.EXTRA_OUTPUT, photo)
@@ -122,9 +170,11 @@ class Utils (internal var context: Context, internal var activity: Activity) : A
             if (photoFile != null) {
 
                 imageUri = Uri.parse(photoFile.absolutePath)
-                val photoURI = FileProvider.getUriForFile(context,
+                val photoURI = FileProvider.getUriForFile(
+                    context,
                     "com.brounie.misonzas.fileprovider",
-                    photoFile)
+                    photoFile
+                )
                 takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
 
 

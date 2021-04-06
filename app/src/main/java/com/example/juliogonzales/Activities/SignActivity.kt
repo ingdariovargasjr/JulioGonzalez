@@ -1,14 +1,15 @@
 package com.example.juliogonzales.Activities
 
-import android.R.attr.bitmap
 import android.app.ProgressDialog
+import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
@@ -16,27 +17,25 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
-import androidx.core.net.toFile
 import com.example.juliogonzales.Models.ReportModel
 import com.example.juliogonzales.R
 import com.example.juliogonzales.Utils.DrawingView
+import com.example.juliogonzales.Utils.Utils
 import com.google.firebase.database.*
-import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageReference
-import com.google.firebase.storage.ktx.storage
-import com.pspdfkit.configuration.activity.PdfActivityConfiguration
 import com.pspdfkit.document.PdfDocumentLoader
 import com.pspdfkit.document.html.HtmlToPdfConverter
-import com.pspdfkit.ui.PdfActivity
 import kotlinx.android.synthetic.main.activity_images_report.*
 import kotlinx.android.synthetic.main.activity_question.*
 import kotlinx.android.synthetic.main.activity_send_report.*
 import kotlinx.android.synthetic.main.activity_sign.*
+import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
 import java.util.*
 import kotlin.collections.HashMap
+import kotlin.concurrent.thread
 
 
 class SignActivity : AppCompatActivity() {
@@ -49,6 +48,8 @@ class SignActivity : AppCompatActivity() {
     private lateinit var Question1Reference: DatabaseReference
     private val images: MutableList<String> = ArrayList()
     private lateinit var hashMap: HashMap<String, Uri>
+    private var canContinue = false
+
 
 
 
@@ -63,17 +64,20 @@ class SignActivity : AppCompatActivity() {
     var personAfixed: String = ""
     var personVerified: String = ""
     var imagesURL: String = ""
+    lateinit var utils: Utils
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_sign)
 
-        hashMap = HashMap()
+
         val drawingView = findViewById<DrawingView>(R.id.drawingView)
         val btn_ready = findViewById<LinearLayout>(R.id.btn_listo)
         val btn_trash = findViewById<ImageView>(R.id.btn_trash)
-
-        getImages()
+        utils = Utils(this, this)
+        utils.checkNeedPermissions()
+        hashMap = HashMap()
 
         // Get the id of the Report
         val bundle = intent.extras
@@ -117,21 +121,41 @@ class SignActivity : AppCompatActivity() {
     }
 
     private fun takeScreenshot() {
+            val permissions = utils.checkAndRequestPermissions()
+        println("Are all the permissions granted ? --> $permissions")
         layoutLine.visibility = View.GONE
         layoutUp.visibility = View.GONE
         val now = Date()
-        android.text.format.DateFormat.format("yyyy-MM-dd_hh:mm:ss", now)
+        val signName = android.text.format.DateFormat.format("yyyy-MM-dd_hh:mm:ss", now).toString()
+
         try {
             // image naming and path  to include sd card  appending name you choose for file
-            val mPath = Environment.getExternalStorageDirectory().toString() + "/" + now + ".jpeg"
 
             // create bitmap screen capture
             val v1 = window.decorView.rootView
             v1.isDrawingCacheEnabled = true
             val bitmap = Bitmap.createBitmap(v1.drawingCache)
             v1.isDrawingCacheEnabled = false
+            val folder = File(Environment.getExternalStorageDirectory(), "JulioGonzales")
+            folder.mkdirs()
 
-            val imageFile = File(mPath)
+            val cw = ContextWrapper(applicationContext)
+            val dir = cw.getExternalFilesDir("images")
+
+            val imageFile = File("${this.getExternalFilesDir("images")!!}${File.pathSeparator}$signName.jpg")
+            if(!imageFile.exists()){
+                val f = imageFile.createNewFile()
+                println("Se crearon archivos: - $f")
+            }
+
+
+            //val imageFile = File("$mPath/JulioGonzales/$signName.jpg")
+            println("------------Existe un nuevo archivo: ${imageFile.exists()} - ${imageFile.absolutePath}")
+            if(imageFile.exists()){
+                val del = imageFile.delete()
+                val created = imageFile.createNewFile()
+                println("IS Deleted? $del\t Is created? $created")
+            }
 
             val outputStream = FileOutputStream(imageFile)
             val quality = 100
@@ -164,12 +188,23 @@ class SignActivity : AppCompatActivity() {
             )
             imageRef.putFile(sharePath!!)
                 .addOnSuccessListener {
+                    getImages()
                     progressDialog.dismiss()
-                    sendEmail()
                     Toast.makeText(this, "Sign Uploaded", Toast.LENGTH_SHORT).show()
 //                    val intent = Intent(this@SignActivity, WelcomeActivity::class.java)
 //                    startActivity(intent)
 //                    finish()
+                    thread() {
+                        Log.i("TAG", "this will be called after 3 seconds ${hashMap.isEmpty()}")
+                        var i = 0
+                        while(hashMap.isEmpty() && !canContinue){
+                            println("Hashmap is empty -> ${hashMap.isEmpty()} - $i")
+                            i++
+                        }
+
+                        sendEmail()
+                    }
+
                 }
                 .addOnFailureListener{
                     progressDialog.dismiss()
@@ -185,6 +220,7 @@ class SignActivity : AppCompatActivity() {
 
 
     fun getImages(){
+        Log.d("TAG", "Enters Get Images")
 
         // Get the id of the Report
         val bundle = intent.extras
@@ -199,45 +235,47 @@ class SignActivity : AppCompatActivity() {
         val storageReference = FirebaseStorage.getInstance().reference
         //Log.d("SignActivity", "Buscando Imagenes $id, ${listRef == null} - ${listRef.toString()}")
 
+        thread() {
+            println("This is running on a different thread!!!!")
+            storage.listAll().addOnSuccessListener { listResult ->
+                println("listresult: ${listResult.prefixes}")
+                listResult.prefixes.forEach { folder ->
+                    println("Folder: ${folder.name}")
+                    folder.listAll().addOnSuccessListener { result ->
 
 
-        storage.listAll().addOnSuccessListener { listResult ->
-            println("listresult: ${listResult.prefixes}")
-            listResult.prefixes.forEach { folder ->
-                println("Folder: ${folder.name}")
-                folder.listAll().addOnSuccessListener { result ->
+                        result.items.forEach { image ->
+                            val pathTemp = image.path.split("/")
+                            image.downloadUrl.addOnSuccessListener {
+                                if(it != null){
+                                    print("Image Properties: ${image.name} ${image.path} -- ${pathTemp[3]}")
+                                    println("\t / ${it.toString()} - ${it.path}")
 
-
-                    result.items.forEach { image ->
-                        val pathTemp = image.path.split("/")
-                        image.downloadUrl.addOnSuccessListener {
-                            if(it != null){
-                                print("Image Properties: ${image.name} ${image.path} -- ${pathTemp[3]}")
-                                println("\t / ${it.toString()} - ${it.path}")
-
-                                hashMap.put(pathTemp[3],it)
-                                println("Asi queda el hashmap: ${hashMap.keys.size} - ${hashMap}")
+                                    hashMap!!.put(pathTemp[3], it)
+                                    println("Asi queda el hashmap: ${hashMap!!.keys.size} - ${hashMap!!}")
+                                }
                             }
-                        }
 
+                        }
                     }
                 }
-            }
 
-        }.addOnFailureListener {
-            Log.d("Bueno", "Error")
+            }.addOnFailureListener {
+                Log.d("Bueno", "Error")
+            }
+            canContinue = true
         }
 
     }
 
-    fun writeBytesAsJPEG(name: String,bytes : ByteArray) {
+    fun writeBytesAsJPEG(name: String, bytes: ByteArray) {
         val path = applicationContext.getExternalFilesDir(Environment.getExternalStorageState() + "/JulioGonzales")
         var success = true
         if(!path!!.exists()){
             success = path.mkdir()
         }
         if(success){
-            var file = File.createTempFile(name,".jpeg", path)
+            var file = File.createTempFile(name, ".jpeg", path)
             var os = FileOutputStream(file);
             os.write(bytes);
             os.close();
@@ -247,6 +285,7 @@ class SignActivity : AppCompatActivity() {
 
     fun sendEmail(){
         // Initialize Database
+        println("-------- ENTERS SEND EMAIL")
         Question1Reference = FirebaseDatabase.getInstance().reference
             .child("Reportes")
             .child(reportId)
@@ -274,10 +313,12 @@ class SignActivity : AppCompatActivity() {
                     val uri = Uri.parse(sharePath.toString())
 
                     var imagesAndURL = ""
-
-                    hashMap.forEach { t, u ->
-                        imagesAndURL += "<img src=\"${u}\" />\n"
+                    println()
+                    hashMap!!.forEach { t, u ->
+                        imagesAndURL += "<img src=\"${u}\" style=\"width: 50%; height: 50%;\" />\n"
                     }
+
+
 
                     var html = """
                         <!DOCTYPE html>
@@ -324,7 +365,10 @@ class SignActivity : AppCompatActivity() {
                     }
 
                     //File
-                    val file = File(Environment.getExternalStorageDirectory().toString() + "/JulioGonzales", "$reportId.pdf")
+                    val file = File(
+                        Environment.getExternalStorageDirectory().toString() + "/JulioGonzales",
+                        "$reportId.pdf"
+                    )
                     if(!file.exists()){
                         val create = file.createNewFile()
 
@@ -339,25 +383,57 @@ class SignActivity : AppCompatActivity() {
                         // Subscribe to the conversion result.
                         .subscribe({
                             // Open and process the converted document.
-                            val document = PdfDocumentLoader.openDocument(this@SignActivity, Uri.fromFile(file))
+                            val document = PdfDocumentLoader.openDocument(
+                                this@SignActivity, Uri.fromFile(
+                                    file
+                                )
+                            )
                         }, {
                             println("...............................")
                             print(it.stackTrace)
                         })
 
-                    val pdf = File(Environment.getExternalStorageDirectory().toString() + "/JulioGonzales/", "$reportId.pdf")
-                    val pdfUri: Uri = FileProvider.getUriForFile(applicationContext, applicationContext.packageName + ".provider",file)
+                    val pdf = File(
+                        Environment.getExternalStorageDirectory().toString() + "/JulioGonzales/",
+                        "$reportId.pdf"
+                    )
+                    val pdfUri: Uri = FileProvider.getUriForFile(
+                        applicationContext,
+                        applicationContext.packageName + ".provider",
+                        file
+                    )
 
                     if(pdf.exists()){
                         println("------------------------ Existe -------------------------")
-                        val shareIntent = Intent()
+                        /*val shareIntent = Intent()
                         shareIntent.action = Intent.ACTION_SEND
                         shareIntent.type = "application/pdf"
 
+                        val resInfoList: List<ResolveInfo> = getPackageManager().queryIntentActivities(
+                                shareIntent,
+                                PackageManager.MATCH_DEFAULT_ONLY
+                            )
+                        println("Print res info list: ${resInfoList.size}")
+                        for (resolveInfo in resInfoList) {
+                            val packageName = resolveInfo.activityInfo.packageName
+                            grantUriPermission(
+                                packageName,
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        }
+
                         shareIntent.putExtra(Intent.EXTRA_STREAM, pdfUri)
                         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
                         shareIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                        startActivity(Intent.createChooser(shareIntent, "Share via"))
+                        startActivity(Intent.createChooser(shareIntent, "Share via"))*/
+
+                        val intent = Intent(Intent.ACTION_VIEW)
+                        intent.setDataAndType(pdfUri,"application/pdf")
+                        intent.setFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
+                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(intent)
                     } else {
                         println("------------------------ !Existe -------------------------")
                     }
